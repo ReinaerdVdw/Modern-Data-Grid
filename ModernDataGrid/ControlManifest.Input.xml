@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest>
-  <control namespace="GUK" constructor="ModernDataGrid" version="0.0.12" display-name-key="ModernDataGrid" description-key="ModernDataGrid description" control-type="virtual">
+  <control namespace="GUK" constructor="ModernDataGrid" version="0.0.16" display-name-key="ModernDataGrid" description-key="ModernDataGrid description" control-type="virtual">
     <!-- dataset node represents a set of entity records on CDS; allow more than one datasets -->
     <data-set name="DataSource" display-name-key="Data source">
       <!-- 'property-set' node represents a unique, configurable property that each record in the dataset must provide. -->
@@ -9,15 +9,16 @@
       <code path="index.ts" order="1" />
       <platform-library name="React" version="16.8.6" />
     </resources>
-    <property name="displayHeader" display-name-key="Display Header" of-type="TwoOptions" usage="bound" />
-    <property name="headerText" display-name-key="Header Text" of-type="SingleLine.Text" usage="bound" />
-    <property name="displaySearch" display-name-key="Display Search" of-type="TwoOptions" usage="bound" />
-    <property name="displayPagination" display-name-key="Display Pagination" of-type="TwoOptions" usage="bound" />
-    <property name="emptyMessage" display-name-key="Empty Message" of-type="SingleLine.Text" usage="bound" />
-    <property name="filterDisplayType" display-name-key="Filter Display Type" of-type="SingleLine.Text" usage="bound" />
-    <property name="defaultRows" display-name-key="Default Rows" of-type="Whole.None" usage="bound" />
-    <property name="selectionMode" display-name-key="Selection Mode" of-type="SingleLine.Text" usage="bound" />
-    <property name="allowSorting" display-name-key="Allow Sorting" of-type="TwoOptions" usage="bound" />
-    <property name="allowFiltering" display-name-key="Allow Filtering" of-type="TwoOptions" usage="bound" />
+    <property name="displayHeader" display-name-key="Display Header" description-key="Whether to display the header of the data grid" of-type="TwoOptions" usage="bound" default-value="true" />
+    <property name="headerText" display-name-key="Header Text" description-key="The text displayed as the header of the data grid" of-type="SingleLine.Text" usage="bound" />
+    <property name="displaySearch" display-name-key="Display Search" description-key="Enables or disables the display of a search input" of-type="TwoOptions" usage="bound" />
+    <property name="displayPagination" display-name-key="Display Pagination" description-key="Enables or disables pagination controls" of-type="TwoOptions" usage="bound" default-value="false" />
+    <property name="emptyMessage" display-name-key="Empty Message" description-key="The message shown when no records are available" of-type="SingleLine.Text" usage="bound" default-value="No records found" />
+    <property name="filterDisplayType" display-name-key="Filter Display Type" description-key="Determines how filters are displayed (e.g., menu or row)" of-type="SingleLine.Text" usage="bound" />
+    <property name="defaultRows" display-name-key="Default Rows" description-key="The number of rows displayed by default" of-type="Whole.None" usage="bound" />
+    <property name="selectionMode" display-name-key="Selection Mode" description-key="Specifies the selection mode (e.g., single or multiple)" of-type="SingleLine.Text" usage="bound" default-value="multiple" />
+    <property name="allowSorting" display-name-key="Allow Sorting" description-key="Enables or disables sorting on columns" of-type="TwoOptions" usage="bound" />
+    <property name="allowFiltering" display-name-key="Allow Filtering" description-key="Enables or disables filtering on columns" of-type="TwoOptions" usage="bound" />
+    <property name="enabled" display-name-key="Enable" description-key="Enables or disables the Data Grid" of-type="TwoOptions" usage="bound" default-value="true" />
   </control>
 </manifest>

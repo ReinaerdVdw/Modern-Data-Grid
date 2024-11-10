@@ -24,6 +24,7 @@ interface DataGridState {
     globalFilterValue: string;
     columns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
     previousParameters: { [key in keyof IInputs]?: any };
+    enabled: boolean;
 }
 
 class DataGrid extends Component<DataGridProps, DataGridState> {
@@ -44,7 +45,8 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
             }, {}),
             globalFilterValue: '',
             columns: [],
-            previousParameters: {}
+            previousParameters: {},
+            enabled: props.context.parameters.enabled.raw ?? true
         };
     }
 
@@ -57,23 +59,23 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         }
         this.saveCurrentParametersToState();
         const cardElement = document.querySelector('.card');
-    if (cardElement && cardElement.parentElement && cardElement.parentElement.parentElement) {
-        cardElement.parentElement.parentElement.style.overflowY = 'auto';
-        cardElement.parentElement.parentElement.style.overflowX = 'auto';
-    }
+        if (cardElement && cardElement.parentElement && cardElement.parentElement.parentElement) {
+            cardElement.parentElement.parentElement.style.overflowY = 'auto';
+            cardElement.parentElement.parentElement.style.overflowX = 'auto';
+        }
     }
 
     saveCurrentParametersToState() {
         const { context } = this.props;
         const parameterValues: { [key in keyof IInputs]?: any } = {};
-    
+
         Object.keys(context.parameters).forEach((key) => {
             const param = context.parameters[key as keyof IInputs];
             if (this.hasRawProperty(param)) {
                 parameterValues[key as keyof IInputs] = param.raw;
             }
         });
-    
+
         this.setState({ previousParameters: parameterValues });
     }
 
@@ -107,12 +109,15 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
     }
 
     componentDidUpdate(prevProps: Readonly<DataGridProps>, prevState: Readonly<DataGridState>): void {
-        console.log("Component did update");
+        //console.log("Component did update");
         const { context } = this.props;
         const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
         // Check if columns have changed
+        if (prevProps.context.parameters.enabled.raw !== this.props.context.parameters.enabled.raw) {
+            this.setState({ enabled: this.props.context.parameters.enabled.raw ?? true });
+        }
         if (JSON.stringify(prevState.columns) !== JSON.stringify(dataSet.columns)) {
-            console.log("Columns have changed. Updating state with new columns.");
+            //console.log("Columns have changed. Updating state with new columns.");
             this.mapRecordsToState();
 
             const newFilters = dataSet.columns.reduce((acc: any, col: any) => {
@@ -128,65 +133,65 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
 
             // Update the filters state only if it has actually changed
             if (JSON.stringify(prevState.filters) !== JSON.stringify(newFilters)) {
-                console.log("Filters have changed. Updating state with new filters.");
+                //console.log("Filters have changed. Updating state with new filters.");
                 this.setState({ filters: newFilters });
             } else {
-                console.log("Filters have not changed. No state update needed.");
+                //console.log("Filters have not changed. No state update needed.");
             }
         } else {
-            console.log("Columns have not changed. No state update needed.");
+            //console.log("Columns have not changed. No state update needed.");
         }
     }
     hasRawProperty(param: any): param is { raw: any } {
         return param && typeof param === 'object' && 'raw' in param;
     }
-    
+
     // Triggers when new data set is loaded in
     shouldComponentUpdate(nextProps: Readonly<DataGridProps>, nextState: Readonly<DataGridState>): boolean {
-        console.log("should component update");
-    
+        //console.log("should component update");
+
         const parameterKeys: (keyof IInputs)[] = Object.keys(nextProps.context.parameters) as (keyof IInputs)[];
-    
+
         for (const key of parameterKeys) {
             const nextParam = nextProps.context.parameters[key];
             const previousParam = this.state.previousParameters[key];
-    
+
             // Check if the parameter has a 'raw' property before accessing it
             if (this.hasRawProperty(nextParam)) {
                 const nextRaw = nextParam.raw;
                 const hasRawCurrent = this.hasRawProperty(previousParam);
-    
-                console.log(`Checking parameter '${key}':`, {
-                    previousParam: hasRawCurrent ? previousParam?.raw : previousParam,
-                    nextParam: nextRaw,
-                    hasRaw: true
-                });
-    
+
+                // console.log(`Checking parameter '${key}':`, {
+                //     previousParam: hasRawCurrent ? previousParam?.raw : previousParam,
+                //     nextParam: nextRaw,
+                //     hasRaw: true
+                // });
+
                 if (previousParam !== nextRaw) {
-                    console.log(`Parameter '${key}' has changed. Previous:`, previousParam, "Next:", nextRaw);
+                    //console.log(`Parameter '${key}' has changed. Previous:`, previousParam, "Next:", nextRaw);
                     return true;
                 }
             } else {
-                console.log(`Parameter '${key}' does not have a 'raw' property. Skipping check.`);
+                //console.log(`Parameter '${key}' does not have a 'raw' property. Skipping check.`);
             }
         }
-    
+
         // Compare columns as before
         const currentColumns = this.state.columns;
         const nextColumns = nextProps.context.parameters.DataSource.columns;
-    
-        console.log("Comparing columns:", {
-            currentColumns,
-            nextColumns,
-            columnsChanged: JSON.stringify(currentColumns) !== JSON.stringify(nextColumns)
-        });
-    
+
+        // console.log("Comparing columns:", {
+        //     currentColumns,
+        //     nextColumns,
+        //     columnsChanged: JSON.stringify(currentColumns) !== JSON.stringify(nextColumns)
+        // });
+
         if (JSON.stringify(currentColumns) !== JSON.stringify(nextColumns)) {
-            console.log("Columns have changed. Component should update.");
+            //console.log("Columns have changed. Component should update.");
             return true;
         }
-    
-        console.log("No changes detected, component should not update.");
+
+        //console.log("No changes detected, component should not update.");
         return false;
     }
 
@@ -204,8 +209,11 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
     };
 
     onSelectionChange = (e: any) => {
+        const gridIsEnabled = this.props.context.parameters.enabled.raw ?? false;
+        if (!gridIsEnabled) {
+            return;
+        }
         const newSelectedRecordIds = e.value.map((record: any) => record.id);
-        console.log('New selected record IDs:', newSelectedRecordIds);
         this.props.context.parameters.DataSource.setSelectedRecordIds(newSelectedRecordIds)
         this.setState({
             selectedRecordIds: newSelectedRecordIds,
@@ -219,7 +227,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const displayHeader = this.props.context.parameters.displayHeader.raw ?? false;
         const displaySearch = this.props.context.parameters.displaySearch.raw ?? false;
         const headerText = this.props.context.parameters.headerText.raw ?? "";
-
+        
         if (!displayHeader) {
             return null;
         }
@@ -267,11 +275,11 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         return [];
     }
 
+
     render() {
         const { context } = this.props;
         const { records, selectedRecordIds, filters } = this.state;
         const header = this.renderHeader();
-
         const displayPagination = context.parameters.displayPagination.raw ?? false;
         const emptyMessage = context.parameters.emptyMessage.raw ?? "No records found.";
         const filterDisplayType = context.parameters.filterDisplayType.raw === "menu" || context.parameters.filterDisplayType.raw === "row"
@@ -285,7 +293,39 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const allowSorting = context.parameters.allowSorting.raw ?? false;
         const allowFiltering = context.parameters.allowFiltering.raw ?? false;
         const rowsPerPageOptions = [10, 25, 50];
+        const onRenderItemColumn = (
+            item?: Record<string, any>,
+            index?: number,
+            column?: IColumn,
+        ) => {
+            console.log("Rendering item column:");
+            console.log("Item:", item);
+            console.log("Index:", index);
+            console.log("Column:", column);
 
+            if (column && column.fieldName && item) {
+                const value = item[column.fieldName];
+                console.log(`Value for field '${column.fieldName}':`, value);
+
+                if (value && typeof value === 'object' && value.toString) {
+                    console.log("Value is an object, using toString():", value.toString());
+                    return value.toString();
+                }
+
+                if (value == null) {
+                    console.log(`Value for field '${column.fieldName}' is null or undefined.`);
+                }
+
+                return value ?? '';
+            }
+
+            console.log("Returning null for the column render.");
+            return null;
+        };
+
+        type IColumn = {
+            fieldName: string;
+        };
         return (
             <div className="card" style={{ display: 'flex', width: '100%', height: '100%', overflow: 'auto' }}>
                 <DataTable
@@ -305,8 +345,8 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                     emptyMessage={emptyMessage}
                     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries"
                     scrollable
-            scrollHeight="flex"
-            style={{ width: '100%', minWidth: '0' }}
+                    scrollHeight="flex"
+                    style={{ width: '100%', minWidth: '0' }}
                 >
                     <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
                     {context.parameters.DataSource.columns.map((col, index) => (
@@ -319,6 +359,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                             filterPlaceholder={`Search by ${col.displayName}`}
                             showFilterMatchModes
                             style={{ minWidth: '12rem' }}
+                            body={(item) => onRenderItemColumn(item, undefined, { fieldName: col.name } as IColumn)}
                         />
                     ))}
                 </DataTable>
