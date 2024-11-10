@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest>
-  <control namespace="GUK" constructor="ModernDataGrid" version="0.0.8" display-name-key="ModernDataGrid" description-key="ModernDataGrid description" control-type="virtual">
+  <control namespace="GUK" constructor="ModernDataGrid" version="0.0.12" display-name-key="ModernDataGrid" description-key="ModernDataGrid description" control-type="virtual">
     <!-- dataset node represents a set of entity records on CDS; allow more than one datasets -->
     <data-set name="DataSource" display-name-key="Data source">
       <!-- 'property-set' node represents a unique, configurable property that each record in the dataset must provide. -->
@@ -10,6 +10,7 @@
       <platform-library name="React" version="16.8.6" />
     </resources>
     <property name="displayHeader" display-name-key="Display Header" of-type="TwoOptions" usage="bound" />
+    <property name="headerText" display-name-key="Header Text" of-type="SingleLine.Text" usage="bound" />
     <property name="displaySearch" display-name-key="Display Search" of-type="TwoOptions" usage="bound" />
     <property name="displayPagination" display-name-key="Display Pagination" of-type="TwoOptions" usage="bound" />
     <property name="emptyMessage" display-name-key="Empty Message" of-type="SingleLine.Text" usage="bound" />
@@ -18,6 +19,5 @@
     <property name="selectionMode" display-name-key="Selection Mode" of-type="SingleLine.Text" usage="bound" />
     <property name="allowSorting" display-name-key="Allow Sorting" of-type="TwoOptions" usage="bound" />
     <property name="allowFiltering" display-name-key="Allow Filtering" of-type="TwoOptions" usage="bound" />
-    <property name="rowsPerPageOptions" display-name-key="Rows Per Page Options" of-type="SingleLine.Text" usage="bound" />
   </control>
 </manifest>
