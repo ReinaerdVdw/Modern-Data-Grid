@@ -1,6 +1,7 @@
 # Modern Data Grid
 
 - **Optimized for Canvas Apps**
+- **Responsive**
 - **Works Seamlessly with Any Data Source**
 - **Includes Built-In Filtering, Sorting, and Keyword Search**
 - **Supports Pagination** (Ensure "Default Rows" is set above 0 for it to display)
