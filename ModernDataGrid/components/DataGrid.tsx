@@ -1,6 +1,8 @@
 import React, { Component } from 'react';
 import { FilterMatchMode, FilterOperator } from 'primereact/api';
-import { DataTable } from 'primereact/datatable';
+import { DataTable, DataTableStateEvent } from 'primereact/datatable';
+import isEqual from 'lodash.isequal';
+
 import { Column } from 'primereact/column';
 import { InputText } from 'primereact/inputtext';
 import { IconField } from 'primereact/iconfield';
@@ -14,6 +16,7 @@ import "./DataGrid.css";
 
 interface DataGridProps {
     context: ComponentFramework.Context<IInputs>;
+    notifyOutputChanged: () => void;
 }
 
 interface DataGridState {
@@ -25,15 +28,21 @@ interface DataGridState {
     columns: ComponentFramework.PropertyHelper.DataSetApi.Column[];
     previousParameters: { [key in keyof IInputs]?: any };
     enabled: boolean;
+    needsRefresh: boolean;
+    currentPage: number;
+    totalPages: number;
 }
 
 class DataGrid extends Component<DataGridProps, DataGridState> {
+    private filterMap: Map<string, any> = new Map();
+    private intervalId: NodeJS.Timeout | null = null;
     static contextType = React.createContext<ComponentFramework.Context<IInputs> | undefined>(undefined);
     declare context: React.ContextType<typeof DataGrid.contextType>;
     constructor(props: DataGridProps) {
         super(props);
         this.state = {
             records: [],
+            totalPages: 1,
             selectedRecords: [],
             selectedRecordIds: [],
             filters: props.context.parameters.DataSource.columns.reduce((acc: any, col: any) => {
@@ -46,22 +55,57 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
             globalFilterValue: '',
             columns: [],
             previousParameters: {},
-            enabled: props.context.parameters.enabled.raw ?? true
+            enabled: props.context.parameters.enabled.raw ?? true,
+            needsRefresh: false,
+            currentPage: 1,
         };
     }
 
     componentDidMount() {
         (window as any).context = this.props.context;
+        //console.log(this.props.context)
         if (this.props.context.parameters.DataSource && !this.props.context.parameters.DataSource.loading) {
             this.mapRecordsToState();
         } else {
-            console.log("Data source not ready at mount.");
+            //console.log("Data source not ready at mount.");
         }
         this.saveCurrentParametersToState();
         const cardElement = document.querySelector('.card');
         if (cardElement && cardElement.parentElement && cardElement.parentElement.parentElement) {
             cardElement.parentElement.parentElement.style.overflowY = 'auto';
             cardElement.parentElement.parentElement.style.overflowX = 'auto';
+        }
+
+        this.checkAndStartInterval();
+        this.forceRefreshDataset();
+
+    }
+
+    componentWillUnmount() {
+        this.clearRefreshInterval();
+    }
+
+    checkAndStartInterval() {
+        (window as any).context = this.props.context;
+        const paging = this.context?.parameters.DataSource.paging;
+        if (this.state.needsRefresh) {
+            if (!this.intervalId) {
+                //console.log('Starting refresh interval...');
+                this.intervalId = setInterval(() => {
+                    //console.log("Pinging for new records...");
+                    this.mapRecordsToState();
+                }, 5000);
+            }
+        } else {
+            this.clearRefreshInterval();
+        }
+    }
+
+    clearRefreshInterval() {
+        if (this.intervalId) {
+            //console.log('Clearing refresh interval...');
+            clearInterval(this.intervalId);
+            this.intervalId = null;
         }
     }
 
@@ -79,92 +123,164 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         this.setState({ previousParameters: parameterValues });
     }
 
-    mapRecordsToState() {
+    mapRecordsToState(force = false) {
         const { context } = this.props;
         const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
-        if (dataSet && !dataSet.loading && dataSet.sortedRecordIds.length > 0) {
-            const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
-            //console.log('DataSet:', dataSet);
-
-            const records = dataSet.sortedRecordIds.map(recordId => {
-                // for each record
-                const record = dataSet.records[recordId];
-                return {
-                    id: recordId,
-                    ...dataSet.columns.reduce((rec: Record<string, any>, col) => {
-                        rec[col.name] = record.getValue(col.alias);
-                        return rec;
-                    }, {})
-                };
-            });
-
-            //console.log('Mapped Records:', records);
-
-            // Update records and columns in state
-            this.setState({
-                records,
-                columns: dataSet.columns
-            });
+        //console.log('Starting mapRecordsToState...');
+        if (!dataSet) {
+            //console.log('DataSet is undefined.');
+            return;
         }
+
+        if (dataSet.loading && !force) {
+            //console.log('DataSet is still loading.');
+            return;
+        }
+
+        if (!dataSet.sortedRecordIds.length) {
+            //console.log('No sorted record IDs found.');
+            // Trigger data fetch or reload
+            if (dataSet.paging && dataSet.paging.loadNextPage) {
+                //console.log('Attempting to load next page...');
+                dataSet.paging.loadNextPage();
+            }
+            return;
+        }
+
+        const records = dataSet.sortedRecordIds.map((recordId) => {
+            const record = dataSet.records[recordId];
+            if (!record) {
+                //console.log(`Record ID ${recordId} not found in dataSet.records.`);
+                return null;
+            }
+
+            const processedRecord = {
+                id: recordId,
+                ...dataSet.columns.reduce((rec: Record<string, any>, col) => {
+                    const value = record.getValue(col.alias);
+                    //console.log(`Column: ${col.name}, Alias: ${col.alias}, Value:`, value);
+                    rec[col.name] = value;
+                    return rec;
+                }, {}),
+            };
+
+            //console.log('Processed record:', processedRecord);
+            return processedRecord;
+        }).filter(Boolean);
+
+        //console.log('Final mapped records:', records);
+        //console.log('Columns:', dataSet.columns);
+
+        this.setState(prevState => {
+            const isRecordsChanged = !isEqual(prevState.records, records);
+            const isColumnsChanged = !isEqual(prevState.columns, dataSet.columns);
+
+            if (isRecordsChanged || isColumnsChanged) {
+                //console.log('Updating state with new records and columns.');
+                return {
+                    records,
+                    columns: dataSet.columns,
+                    needsRefresh: false
+                };
+            }
+
+            //console.log('No changes detected in records or columns. Skipping state update.');
+            return null;
+        });
+    }
+
+
+    updateFilters(columns: ComponentFramework.PropertyHelper.DataSetApi.Column[], previousFilters: any) {
+        return columns.reduce((acc: any, col: any) => {
+            acc[col.name] = previousFilters[col.name] || {
+                operator: FilterOperator.AND,
+                constraints: [{ value: null, matchMode: FilterMatchMode.CONTAINS }]
+            };
+            return acc;
+        }, {});
     }
 
     componentDidUpdate(prevProps: Readonly<DataGridProps>, prevState: Readonly<DataGridState>): void {
-        //console.log("Component did update");
         const { context } = this.props;
         const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
-        // Check if columns have changed
-        if (prevProps.context.parameters.enabled.raw !== this.props.context.parameters.enabled.raw) {
-            this.setState({ enabled: this.props.context.parameters.enabled.raw ?? true });
+
+        if (!dataSet || dataSet.loading) {
+            //console.log('DataSet is invalid or still loading. Skipping update.');
+            return;
         }
-        if (JSON.stringify(prevState.columns) !== JSON.stringify(dataSet.columns)) {
-            //console.log("Columns have changed. Updating state with new columns.");
+
+        const dataSourceChanged = prevProps.context.parameters.DataSource !== this.props.context.parameters.DataSource;
+        const sortedRecordIdsChanged =
+            JSON.stringify(prevProps.context.parameters.DataSource.sortedRecordIds) !== JSON.stringify(dataSet.sortedRecordIds);
+
+        if (dataSourceChanged || sortedRecordIdsChanged) {
+            //console.log('Data source or records have changed. Updating records.');
             this.mapRecordsToState();
+            this.forceRefreshDataset();
+        }
 
-            const newFilters = dataSet.columns.reduce((acc: any, col: any) => {
-                acc[col.name] = acc[col.name] || {
-                    operator: FilterOperator.AND,
-                    constraints: [{ value: null, matchMode: FilterMatchMode.CONTAINS }]
-                };
-                return acc;
-            }, {});
+        if (!this.areColumnsEqual(prevState.columns, dataSet.columns)) {
+            //console.log('Columns have changed. Updating filters.');
+            const newFilters = this.updateFilters(dataSet.columns, prevState.filters);
 
-            //console.log("New Filters:", newFilters);
-            //console.log("Previous Filters:", prevState.filters);
-
-            // Update the filters state only if it has actually changed
             if (JSON.stringify(prevState.filters) !== JSON.stringify(newFilters)) {
-                //console.log("Filters have changed. Updating state with new filters.");
-                this.setState({ filters: newFilters });
-            } else {
-                //console.log("Filters have not changed. No state update needed.");
+                //console.log('Filters have changed. Updating state.');
+                this.setState({ filters: newFilters, needsRefresh: true });
+                this.forceRefreshDataset();
             }
-        } else {
-            //console.log("Columns have not changed. No state update needed.");
+        }
+
+        if (prevState.needsRefresh !== this.state.needsRefresh) {
+            this.checkAndStartInterval();
+            this.forceRefreshDataset();
+        }
+
+        if (!this.state.records.length && !dataSet.loading) {
+            //console.log('No records found in state. Triggering mapRecordsToState again.');
+            this.mapRecordsToState();
         }
     }
+
+
     hasRawProperty(param: any): param is { raw: any } {
         return param && typeof param === 'object' && 'raw' in param;
     }
 
+    areColumnsEqual(
+        currentColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
+        nextColumns: ComponentFramework.PropertyHelper.DataSetApi.Column[]
+    ): boolean {
+        if (currentColumns.length !== nextColumns.length) {
+            return false;
+        }
+
+        for (let i = 0; i < currentColumns.length; i++) {
+            if (
+                currentColumns[i].name !== nextColumns[i].name ||
+                currentColumns[i].displayName !== nextColumns[i].displayName
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
     // Triggers when new data set is loaded in
     shouldComponentUpdate(nextProps: Readonly<DataGridProps>, nextState: Readonly<DataGridState>): boolean {
-        //console.log("should component update");
-
         const parameterKeys: (keyof IInputs)[] = Object.keys(nextProps.context.parameters) as (keyof IInputs)[];
 
         for (const key of parameterKeys) {
             const nextParam = nextProps.context.parameters[key];
             const previousParam = this.state.previousParameters[key];
 
-            // Check if the parameter has a 'raw' property before accessing it
             if (this.hasRawProperty(nextParam)) {
                 const nextRaw = nextParam.raw;
                 const hasRawCurrent = this.hasRawProperty(previousParam);
 
-                // console.log(`Checking parameter '${key}':`, {
+                // //console.log(`Checking parameter '${key}':`, {
                 //     previousParam: hasRawCurrent ? previousParam?.raw : previousParam,
                 //     nextParam: nextRaw,
-                //     hasRaw: true
+                //     hasRaw: true,
                 // });
 
                 if (previousParam !== nextRaw) {
@@ -176,18 +292,16 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
             }
         }
 
-        // Compare columns as before
         const currentColumns = this.state.columns;
         const nextColumns = nextProps.context.parameters.DataSource.columns;
 
-        // console.log("Comparing columns:", {
-        //     currentColumns,
-        //     nextColumns,
-        //     columnsChanged: JSON.stringify(currentColumns) !== JSON.stringify(nextColumns)
-        // });
-
-        if (JSON.stringify(currentColumns) !== JSON.stringify(nextColumns)) {
+        if (!this.areColumnsEqual(currentColumns, nextColumns)) {
             //console.log("Columns have changed. Component should update.");
+            return true;
+        }
+
+        if (JSON.stringify(this.state.filters) !== JSON.stringify(nextState.filters)) {
+            //console.log("Filters have changed. Component should update.");
             return true;
         }
 
@@ -227,7 +341,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const displayHeader = this.props.context.parameters.displayHeader.raw ?? false;
         const displaySearch = this.props.context.parameters.displaySearch.raw ?? false;
         const headerText = this.props.context.parameters.headerText.raw ?? "";
-        
+
         if (!displayHeader) {
             return null;
         }
@@ -256,7 +370,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const { context } = this.props;
         if (context.parameters.DataSource && !context.parameters.DataSource.loading) {
             const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
-            //console.log('DataSet:', dataSet);
+            ////console.log('DataSet:', dataSet);
 
             const records = dataSet.sortedRecordIds.map(recordId => {
                 const record = dataSet.records[recordId];
@@ -264,77 +378,157 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                     id: recordId,
                     ...dataSet.columns.reduce((rec: Record<string, any>, col) => {
                         rec[col.name] = record.getValue(col.alias);
-                        console.log(rec)
+                        //console.log(rec)
                         return rec;
                     }, {})
                 };
             });
-            //console.log('Mapped Records:', records);
+            ////console.log('Mapped Records:', records);
             return records;
         }
         return [];
     }
 
+    forceRefreshDataset = () => {
+        setTimeout(() => {
+            this.props.notifyOutputChanged();
+            this.mapRecordsToState(true);
+            this.forceUpdate();
+        }, 300);
+    };
 
     render() {
         const { context } = this.props;
+        const paging = context.parameters.DataSource.paging;
         const { records, selectedRecordIds, filters } = this.state;
         const header = this.renderHeader();
-        const displayPagination = context.parameters.displayPagination.raw ?? false;
+        const displayPagination = context.parameters.displayPagination.raw ?? true;
         const emptyMessage = context.parameters.emptyMessage.raw ?? "No records found.";
         const filterDisplayType = context.parameters.filterDisplayType.raw === "menu" || context.parameters.filterDisplayType.raw === "row"
             ? context.parameters.filterDisplayType.raw
             : "menu";
-        const defaultRows = context.parameters.defaultRows.raw ?? 10;
         const allowedSelectionModes: Array<"multiple" | "checkbox"> = ["multiple", "checkbox"];
         const selectionMode = (context.parameters.selectionMode.raw && allowedSelectionModes.includes(context.parameters.selectionMode.raw as any))
             ? (context.parameters.selectionMode.raw as "multiple" | "checkbox")
             : "multiple";
         const allowSorting = context.parameters.allowSorting.raw ?? false;
         const allowFiltering = context.parameters.allowFiltering.raw ?? false;
-        const rowsPerPageOptions = [10, 25, 50];
+        const rowsPerPageOptions = [5, 15, 25];
+
         const onRenderItemColumn = (
             item?: Record<string, any>,
             index?: number,
             column?: IColumn,
         ) => {
-            console.log("Rendering item column:");
-            console.log("Item:", item);
-            console.log("Index:", index);
-            console.log("Column:", column);
+            //console.log("Rendering item column:");
+            //console.log("Item:", item);
+            //console.log("Index:", item?.id);
+            //console.log("Column:", column);
 
             if (column && column.fieldName && item) {
                 const value = item[column.fieldName];
-                console.log(`Value for field '${column.fieldName}':`, value);
+                //console.log(`Value for field '${column.fieldName}':`, value);
 
                 if (value && typeof value === 'object' && value.toString) {
-                    console.log("Value is an object, using toString():", value.toString());
+                    //console.log("Value is an object, using toString():", value.toString());
                     return value.toString();
                 }
 
                 if (value == null) {
-                    console.log(`Value for field '${column.fieldName}' is null or undefined.`);
+                    //console.log(`Value for field '${column.fieldName}' is null or undefined.`);
                 }
 
                 return value ?? '';
             }
 
-            console.log("Returning null for the column render.");
+            //console.log("Returning null for the column render.");
             return null;
         };
 
         type IColumn = {
             fieldName: string;
         };
+
+
         return (
             <div className="card" style={{ display: 'flex', width: '100%', height: '100%', overflow: 'auto' }}>
                 <DataTable
                     value={records}
                     paginator={displayPagination}
                     header={header}
-                    rows={defaultRows}
+                    rows={paging.pageSize}
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     rowsPerPageOptions={rowsPerPageOptions}
+                    first={(this.state.currentPage - 1) * paging.pageSize}
+                    totalRecords={paging.totalResultCount}
+                    /*
+                totalResultCount: number;
+                firstPageNumber: number;
+                lastPageNumber: number;
+                pageSize: number;
+                hasNextPage: boolean;
+                hasPreviousPage: boolean;
+                loadNextPage(loadOnlyNewPage?: boolean): void;
+                loadPreviousPage(loadOnlyNewPage?: boolean): void;
+                reset(): void;
+                setPageSize(pageSize: number): void;
+                loadExactPage(pageNumber: number): void;
+            }
+                    
+                    */
+
+                    onPage={(e: any) => {
+                        //console.log('onPage event triggered');
+                        const { page, rows } = e;
+
+                        if (paging) {
+                            const totalPages = Math.ceil(paging.totalResultCount / rows);
+                            //console.log('Paging Object:', paging);
+                            const targetPage = page + 1;
+                            //console.log('Current Target Page:', targetPage);
+                            //console.log('Rows Per Page:', rows);
+
+                            // Handle change in rows per page
+                            if (rows !== paging.pageSize) {
+                                //console.log('Changing rows per page to:', rows);
+                                paging.setPageSize(rows);
+                                paging.reset();
+                                this.setState({ currentPage: 1 }, () => {
+                                    this.forceRefreshDataset();
+                                });
+                            }
+                            // Navigate to next page
+                            else if (targetPage > this.state.currentPage && targetPage <= totalPages) {
+                                //console.log('Navigating to next page');
+                                paging.loadNextPage();
+                                this.setState({ currentPage: targetPage });
+                                this.forceRefreshDataset();
+                            }
+                            // Navigate to previous page
+                            else if (targetPage < this.state.currentPage && targetPage >= 0) {
+                                //console.log('Navigating to previous page');
+                                paging.loadPreviousPage();
+                                this.setState({ currentPage: targetPage }, () => {
+                                    this.forceRefreshDataset();
+                                });
+                            }
+                            // Navigate to an exact page
+                            else if (targetPage !== this.state.currentPage) {
+                                //console.log('Loading exact page:', targetPage);
+                                paging.loadExactPage(targetPage + 1);
+                                this.setState({ currentPage: targetPage }, () => {
+                                    this.forceRefreshDataset();
+                                });
+                            } else {
+                                //console.log('No action taken for paging');
+                            }
+
+                            // Ensure UI reflects changes
+                            this.forceUpdate();
+                        } else {
+                            //console.log('Paging is undefined');
+                        }
+                    }}
                     dataKey="id"
                     selectionMode={selectionMode}
                     selection={records.filter(record => selectedRecordIds.includes(record.id))}
@@ -343,10 +537,11 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                     filterDisplay={filterDisplayType as "menu" | "row"}
                     globalFilterFields={context.parameters.DataSource.columns.map(col => col.name)}
                     emptyMessage={emptyMessage}
-                    currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries"
+                    currentPageReportTemplate={`Showing {first} to {last} of ${paging.totalResultCount} entries`}
                     scrollable
                     scrollHeight="flex"
                     style={{ width: '100%', minWidth: '0' }}
+                    
                 >
                     <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
                     {context.parameters.DataSource.columns.map((col, index) => (
