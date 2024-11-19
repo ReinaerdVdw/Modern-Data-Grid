@@ -15,7 +15,7 @@ export class ModernDataGrid implements ComponentFramework.ReactControl<IInputs, 
         state: ComponentFramework.Dictionary,
         container: HTMLDivElement
     ): void {
-        console.log("Modern Data Grid 1.7.1");
+        console.log("Modern Data Grid 1.7");
         this.container = container;
         this.notifyOutputChanged = notifyOutputChanged;
     }

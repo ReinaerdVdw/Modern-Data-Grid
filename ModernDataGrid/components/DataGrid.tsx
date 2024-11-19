@@ -2,12 +2,12 @@ import React, { Component } from 'react';
 import { FilterMatchMode, FilterOperator } from 'primereact/api';
 import { DataTable, DataTableStateEvent } from 'primereact/datatable';
 import isEqual from 'lodash.isequal';
-
 import { Column } from 'primereact/column';
 import { InputText } from 'primereact/inputtext';
 import { IconField } from 'primereact/iconfield';
 import { InputIcon } from 'primereact/inputicon';
 import { IInputs } from "../generated/ManifestTypes";
+import { formatDate, getAvailableDatePatterns } from '../helpers/Utils';
 import 'primereact/resources/themes/saga-blue/theme.css';
 import 'primereact/resources/primereact.min.css';
 import 'primeicons/primeicons.css';
@@ -55,7 +55,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
             globalFilterValue: '',
             columns: [],
             previousParameters: {},
-            enabled: props.context.parameters.enabled.raw ?? true,
+            enabled: props.context.parameters.IsEnabled?.raw ?? true,
             needsRefresh: false,
             currentPage: 1,
         };
@@ -63,11 +63,12 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
 
     componentDidMount() {
         (window as any).context = this.props.context;
-        //console.log(this.props.context)
+        console.log(this.props.context)
+
         if (this.props.context.parameters.DataSource && !this.props.context.parameters.DataSource.loading) {
             this.mapRecordsToState();
         } else {
-            //console.log("Data source not ready at mount.");
+            console.log("Data source not ready at mount.");
         }
         this.saveCurrentParametersToState();
         const cardElement = document.querySelector('.card');
@@ -123,13 +124,86 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         this.setState({ previousParameters: parameterValues });
     }
 
-    mapRecordsToState(force = false) {
+    formatCurrency(value: any, currency: string): string {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency,
+        }).format(value);
+    }
+
+    formatDecimal(value: any, decimalPlaces: number): string {
+        return new Intl.NumberFormat("en-US", {
+            minimumFractionDigits: decimalPlaces,
+            maximumFractionDigits: decimalPlaces,
+        }).format(value);
+    }
+
+    parseConfigurations(configString: string): Record<string, any> {
+        const configs: Record<string, any> = {};
+      
+        try {
+          // Split by comma for each field
+          const fields = configString.split(",");
+          fields.forEach((field) => {
+            const [fieldName, config] = field.split("=");
+            if (fieldName && config) {
+              // Split configurations by "|" and ":" for key-value pairs
+              const configObject = config.split("|").reduce((acc, pair) => {
+                const [key, value] = pair.split(":");
+                if (key && value) acc[key.trim()] = value.trim();
+                return acc;
+              }, {} as Record<string, any>);
+              configs[fieldName.trim()] = configObject;
+            }
+          });
+        } catch (error) {
+          console.error("Error parsing FieldConfigurations:", error);
+        }
+      
+        return configs;
+      }
+      
+     
+
+
+      mapRecordsToState(force = false) {
         const { context } = this.props;
         const dataSet = context.parameters.DataSource as ComponentFramework.PropertyTypes.DataSet;
+      console.log("map to state")
+        // Parse field configurations
+        let fieldConfig: Record<string, any> = {};
+        try {
+          const rawConfig = context.parameters.FieldConfigurations?.raw || "{}";
+          fieldConfig = this.parseConfigurations(rawConfig);
+        } catch (error) {
+          console.error("Invalid JSON in FieldConfigurations:", context.parameters.FieldConfigurations?.raw, error);
+        }
+
+        const typeHandlers: Record<string, (value: any, config: any, context: ComponentFramework.Context<IInputs>) => any> = {
+            "Currency": (value, config) => this.formatCurrency(value, config?.currency || "USD"),
+            "DateAndTime.DateAndTime": (value, config, context) =>
+              formatDate(new Date(value), config?.dateFormat || "yyyy-MM-dd HH:mm:ss", context),
+            "DateAndTime.DateOnly": (value, config, context) =>
+              formatDate(new Date(value), config?.dateFormat || "yyyy-MM-dd", context),
+            "Decimal": (value, config) => this.formatDecimal(value, parseInt(config?.decimalPlaces) || 2),
+            "TwoOptions": (value, config) => (value ? config?.trueLabel || "Yes" : config?.falseLabel || "No"),
+            "SingleLine.Email": (value) => `mailto:${value}`,
+            "SingleLine.Phone": (value) => `tel:${value}`,
+            "SingleLine.URL": (value) => `<a href="${value}">${value}</a>`,
+            "Object": (value) => JSON.stringify(value),
+            // Add more as needed
+          };
+
+        //const dateFormat = context.parameters.DateFormat?.raw || availablePatterns[0] || "yyyy-MM-dd";
+        //const fieldConfigs = JSON.parse(context.parameters.FieldConfigurations?.raw || "{}");
         //console.log('Starting mapRecordsToState...');
         if (!dataSet) {
             //console.log('DataSet is undefined.');
             return;
+        }
+
+        if (dataSet.paging.totalResultCount === -1) {
+            console.log("unable to retrieve records, because paging.totalResultCount is -1")
         }
 
         if (dataSet.loading && !force) {
@@ -153,18 +227,28 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                 //console.log(`Record ID ${recordId} not found in dataSet.records.`);
                 return null;
             }
-
+            console.log("preproceed record", record)
             const processedRecord = {
                 id: recordId,
                 ...dataSet.columns.reduce((rec: Record<string, any>, col) => {
                     const value = record.getValue(col.alias);
-                    //console.log(`Column: ${col.name}, Alias: ${col.alias}, Value:`, value);
-                    rec[col.name] = value;
-                    return rec;
+                    const colType = col.dataType;
+                    //Decimal SingleLine.Text
+                    try {
+                        // Use the typeHandlers map to process the column type
+                        rec[col.name] = typeHandlers[colType]
+                          ? typeHandlers[colType](value, fieldConfig, context)
+                          : value; // Default case for unsupported data types
+                          console.log("Type handler",typeHandlers[colType])
+                      } catch (error) {
+                        console.error(`Error processing column "${col.name}" of type "${colType}":`, error);
+                        rec[col.name] = value; // Fallback to raw value
+                      }
+                      return rec;
                 }, {}),
             };
 
-            //console.log('Processed record:', processedRecord);
+            console.log('Processed record:', processedRecord);
             return processedRecord;
         }).filter(Boolean);
 
@@ -213,10 +297,18 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const sortedRecordIdsChanged =
             JSON.stringify(prevProps.context.parameters.DataSource.sortedRecordIds) !== JSON.stringify(dataSet.sortedRecordIds);
 
-        if (dataSourceChanged || sortedRecordIdsChanged) {
-            //console.log('Data source or records have changed. Updating records.');
+        const filtersChanged = JSON.stringify(prevState.filters) !== JSON.stringify(this.state.filters);
+        const prevFieldConfigurations = prevProps.context.parameters.FieldConfigurations?.raw || "";
+    const currentFieldConfigurations = this.props.context.parameters.FieldConfigurations?.raw || "";
+    
+        const fieldConfigurationsChanged = prevFieldConfigurations !== currentFieldConfigurations;
+
+
+        if (dataSourceChanged || sortedRecordIdsChanged || filtersChanged || fieldConfigurationsChanged) {
+            console.log("Changes detected in DataSource, records, filters, or FieldConfigurations. Updating state.");
             this.mapRecordsToState();
             this.forceRefreshDataset();
+            //this.setState({ previousFieldConfigurations: currentFieldConfigurations });
         }
 
         if (!this.areColumnsEqual(prevState.columns, dataSet.columns)) {
@@ -267,8 +359,14 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
     }
     // Triggers when new data set is loaded in
     shouldComponentUpdate(nextProps: Readonly<DataGridProps>, nextState: Readonly<DataGridState>): boolean {
+        console.log("component udpated")
+        console.log(this.props.context.parameters.DataSource.columns)
+        console.log(this.props.context.parameters.DataSource)
         const parameterKeys: (keyof IInputs)[] = Object.keys(nextProps.context.parameters) as (keyof IInputs)[];
-
+        const needsRefresh = nextState.needsRefresh;
+        if (needsRefresh) {
+            this.props.context.parameters.DataSource.refresh();
+        }
         for (const key of parameterKeys) {
             const nextParam = nextProps.context.parameters[key];
             const previousParam = this.state.previousParameters[key];
@@ -323,7 +421,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
     };
 
     onSelectionChange = (e: any) => {
-        const gridIsEnabled = this.props.context.parameters.enabled.raw ?? false;
+        const gridIsEnabled = this.props.context.parameters.IsEnabled?.raw ?? false;
         if (!gridIsEnabled) {
             return;
         }
@@ -338,9 +436,9 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
     };
 
     renderHeader() {
-        const displayHeader = this.props.context.parameters.displayHeader.raw ?? false;
-        const displaySearch = this.props.context.parameters.displaySearch.raw ?? false;
-        const headerText = this.props.context.parameters.headerText.raw ?? "";
+        const displayHeader = this.props.context.parameters.DisplayHeader?.raw ?? false;
+        const displaySearch = this.props.context.parameters.DisplaySearch?.raw ?? false;
+        const headerText = this.props.context.parameters.HeaderText?.raw ?? this.props.context.parameters.DataSource.getTargetEntityType();
 
         if (!displayHeader) {
             return null;
@@ -402,17 +500,15 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
         const paging = context.parameters.DataSource.paging;
         const { records, selectedRecordIds, filters } = this.state;
         const header = this.renderHeader();
-        const displayPagination = context.parameters.displayPagination.raw ?? true;
-        const emptyMessage = context.parameters.emptyMessage.raw ?? "No records found.";
-        const filterDisplayType = context.parameters.filterDisplayType.raw === "menu" || context.parameters.filterDisplayType.raw === "row"
-            ? context.parameters.filterDisplayType.raw
-            : "menu";
+        const displayPagination = context.parameters.DisplayPagination?.raw ?? true;
+        const emptyMessage = context.parameters.EmptyMessage?.raw ?? "No records found.";
+        const filterDisplayType = "menu";
         const allowedSelectionModes: Array<"multiple" | "checkbox"> = ["multiple", "checkbox"];
-        const selectionMode = (context.parameters.selectionMode.raw && allowedSelectionModes.includes(context.parameters.selectionMode.raw as any))
-            ? (context.parameters.selectionMode.raw as "multiple" | "checkbox")
+        const selectionMode = (context.parameters.SelectionMode?.raw && allowedSelectionModes.includes(context.parameters.SelectionMode?.raw as any))
+            ? (context.parameters.SelectionMode?.raw as "multiple" | "checkbox")
             : "multiple";
-        const allowSorting = context.parameters.allowSorting.raw ?? false;
-        const allowFiltering = context.parameters.allowFiltering.raw ?? false;
+        const allowSorting = context.parameters.AllowSorting?.raw ?? false;
+        const allowFiltering = context.parameters.AllowFiltering?.raw ?? false;
         const rowsPerPageOptions = [5, 15, 25];
 
         const onRenderItemColumn = (
@@ -541,7 +637,7 @@ class DataGrid extends Component<DataGridProps, DataGridState> {
                     scrollable
                     scrollHeight="flex"
                     style={{ width: '100%', minWidth: '0' }}
-                    
+
                 >
                     <Column selectionMode="multiple" headerStyle={{ width: '3rem' }}></Column>
                     {context.parameters.DataSource.columns.map((col, index) => (
