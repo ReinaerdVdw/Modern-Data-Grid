@@ -4,7 +4,7 @@ import * as React from "react";
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
 import DataGrid from "./components/DataGrid";
 
-export class ModernDataGrid implements ComponentFramework.ReactControl<IInputs, IOutputs> {
+export class ModernDataGridReinaerd implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private container: HTMLDivElement;
     private notifyOutputChanged: () => void;
     constructor() {}

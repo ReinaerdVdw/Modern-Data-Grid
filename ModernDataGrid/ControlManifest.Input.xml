@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest>
-  <control namespace="GUK" constructor="ModernDataGrid" version="0.0.29" display-name-key="ModernDataGrid" description-key="ModernDataGrid description" control-type="virtual">
+  <control namespace="GUK" constructor="ModernDataGridReinaerd" version="0.0.29" display-name-key="ModernDataGridReinaerd" description-key="ModernDataGrid description" control-type="virtual">
     <!-- dataset node represents a set of entity records on CDS; allow more than one datasets -->
     <data-set name="DataSource" display-name-key="Data source">
       <!-- 'property-set' node represents a unique, configurable property that each record in the dataset must provide. -->
@@ -14,6 +14,7 @@
     <property name="DisplaySearch" display-name-key="Display Search" description-key="Enables or disables the display of a search input" of-type="TwoOptions" usage="bound" />
     <property name="DisplayPagination" display-name-key="Display Pagination" description-key="Enables or disables pagination controls" of-type="TwoOptions" usage="bound" default-value="false" />
     <property name="EmptyMessage" display-name-key="Empty Message" description-key="The message shown when no records are available" of-type="SingleLine.Text" usage="bound" default-value="No records found" />
+    <property name="defaultRows" display-name-key="Default Rows" description-key="The number of rows displayed by default" of-type="Whole.None" usage="bound" />
     <property name="SelectionMode" display-name-key="Selection Mode" description-key="Specifies the selection mode (e.g., single or multiple)" of-type="SingleLine.Text" usage="bound" default-value="multiple" />
     <property name="AllowSorting" display-name-key="Allow Sorting" description-key="Enables or disables sorting on columns" of-type="TwoOptions" usage="bound" />
     <property name="AllowFiltering" display-name-key="Allow Filtering" description-key="Enables or disables filtering on columns" of-type="TwoOptions" usage="bound" />
